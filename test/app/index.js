@@ -15,6 +15,10 @@ import Cart from "./pages/Cart";
 import Otp from "./pages/Otp";
 import Checkout from "./pages/Checkout";
 import OrderSuccess from "./pages/OrderSuccess";
+import InstallmentConfirmation from "./pages/InstallmentConfirmation";
+import InstallmentsList from "./pages/InstallmentsList";
+import InstallmentPayment from "./pages/InstallmentPayment";
+import MyOrders from "./pages/MyOrders";
 import wishlist from "./pages/wishlist";   
 import Chat from "./pages/Chat";   
 import Reviews from "./pages/Reviews";
@@ -193,6 +197,27 @@ function RenderStack() {
         }}
       />
       <Stack.Screen 
+        name="InstallmentConfirmation" 
+        component={InstallmentConfirmation}
+        options={{ 
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="InstallmentsList" 
+        component={InstallmentsList}
+        options={{ 
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
+        name="InstallmentPayment" 
+        component={InstallmentPayment}
+        options={{ 
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen 
         name="OrderSuccess" 
         component={OrderSuccess}
         options={{ 
@@ -239,6 +264,13 @@ function RenderStack() {
             fontWeight: 'bold',
           },
           headerBackTitleVisible: false,
+        }}
+      />
+      <Stack.Screen 
+        name="MyOrders" 
+        component={MyOrders}
+        options={{ 
+          headerShown: false,
         }}
       />
     </Stack.Navigator>

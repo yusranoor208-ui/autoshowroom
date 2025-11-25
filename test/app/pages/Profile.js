@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useDispatch, useSelector } from "react-redux";
 import { setUser, clearCart } from "../redux/Slices/HomeDataSlice";
 import { logout } from "../Helper/firebaseHelper";
@@ -105,6 +106,16 @@ export default function Profile({ navigation }) {
         <TextInput value={phone} onChangeText={setPhone} style={styles.input} placeholder="Your phone" keyboardType="phone-pad" />
       </View>
 
+      {/* My Orders Button */}
+      <TouchableOpacity 
+        style={[styles.menuButton, { backgroundColor: "#6a0dad", marginBottom: 10 }]} 
+        onPress={() => navigation.navigate("MyOrders")}
+      >
+        <Ionicons name="receipt-outline" size={20} color="#fff" style={{ marginRight: 10 }} />
+        <Text style={{ color: "#fff", fontWeight: "bold", flex: 1 }}>My Orders</Text>
+        <Ionicons name="chevron-forward" size={20} color="#fff" />
+      </TouchableOpacity>
+
       <TouchableOpacity style={[styles.logoutBtn, { backgroundColor: "#6a0dad", marginBottom: 10 }]} onPress={handleSave} disabled={saving}>
         <Text style={{ color: "#fff", fontWeight: "bold" }}>{saving ? "Saving..." : "Save Profile"}</Text>
       </TouchableOpacity>
@@ -132,6 +143,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 10,
     marginTop: 6,
+  },
+  menuButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 10,
+    backgroundColor: "#6a0dad",
   },
   logoutBtn: {
     backgroundColor: "#e74c3c",

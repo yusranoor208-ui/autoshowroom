@@ -121,7 +121,12 @@ export default function ProductDetail({ navigation, route }) {
 
     setLoading(true);
     try {
-      const order = {
+      const priceString = scooter.price.replace(/[^0-9]/g, "");
+      const totalPrice = parseInt(priceString) || 0;
+      const installmentData = paymentType === "installment" ? calculateInstallment() : null;
+
+      // Prepare order data (not saved yet - will be saved on confirmation page)
+      const orderData = {
         orderId: `ORD-${Date.now()}`,
         userId: user.uid,
         items: [{
@@ -130,38 +135,59 @@ export default function ProductDetail({ navigation, route }) {
           price: scooter.price,
           quantity: qty,
           color: selectedColor,
-          image: scooter.image
+          image: scooter.image,
+          type: scooter.type
         }],
         status: "pending",
         payment: {
           method: paymentType === "installment" ? "installment" : "full",
           ...(paymentType === "installment" ? {
             months: installmentMonths,
-            monthlyAmount: calculateInstallment().monthly,
-            totalAmount: calculateInstallment().totalWithInterest,
-            interest: calculateInstallment().interest,
+            monthlyAmount: installmentData.monthly,
+            totalAmount: installmentData.totalWithInterest,
+            interest: installmentData.interest,
             paidAmount: 0,
-            remainingAmount: calculateInstallment().totalWithInterest,
+            remainingAmount: installmentData.totalWithInterest,
             nextPaymentDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
           } : {
-            amount: parseFloat(scooter.price.replace(/[^0-9]/g, "")) * qty
+            amount: totalPrice * qty
           })
         },
         shipping: {},
         createdAt: new Date().toISOString()
       };
 
-      // Add to Firestore
-      const docRef = await addDoc(collection(db, "orders"), order);
-
-      // Navigate to appropriate screen
-      navigation.navigate(
-        paymentType === "installment" ? "InstallmentConfirmation" : "Checkout",
-        { orderId: docRef.id, ...order }
-      );
+      // Navigate to appropriate screen with order data
+      if (paymentType === "installment") {
+        // Pass installment plan data to InstallmentConfirmation
+        navigation.navigate("InstallmentConfirmation", {
+          orderData: orderData,
+          installmentPlan: {
+            months: installmentMonths,
+            monthlyAmount: installmentData.monthly,
+            totalAmount: installmentData.totalWithInterest,
+            interest: installmentData.interest,
+            total: installmentData.total,
+            formatted: installmentData.formatted,
+            totalFormatted: installmentData.totalFormatted,
+            interestFormatted: installmentData.interestFormatted
+          },
+          product: {
+            id: scooter.id,
+            name: scooter.name,
+            price: scooter.price,
+            image: scooter.image,
+            color: selectedColor,
+            quantity: qty
+          }
+        });
+      } else {
+        // For full payment, navigate to Checkout
+        navigation.navigate("Checkout", { orderData });
+      }
 
     } catch (error) {
-      console.error("Error creating order:", error);
+      console.error("Error preparing order:", error);
       Alert.alert("Error", "Failed to process your order. Please try again.");
     } finally {
       setLoading(false);
