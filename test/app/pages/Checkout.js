@@ -1,15 +1,46 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, CheckBox, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { addData } from "../Helper/firebaseHelper";
 import { useDispatch, useSelector } from "react-redux";
 import { clearCartItems } from "../redux/Slices/HomeDataSlice";
+import { useRoute } from "@react-navigation/native";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../../firebase";
+import { getAuth } from "firebase/auth";
+
+// Custom Checkbox Component
+const CustomCheckbox = ({ value, onValueChange, label }) => {
+  return (
+    <TouchableOpacity
+      style={styles.checkboxContainer}
+      onPress={() => onValueChange(!value)}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.checkbox, value && styles.checkboxChecked]}>
+        {value && (
+          <Ionicons name="checkmark" size={16} color="#fff" />
+        )}
+      </View>
+      {label && <Text style={styles.checkboxLabel}>{label}</Text>}
+    </TouchableOpacity>
+  );
+};
 
 export default function CheckoutScreen({ navigation }) {
+  const route = useRoute();
+  const auth = getAuth();
   const [checked, setChecked] = useState(false);
   const dispatch = useDispatch();
   const [loading, setLoading] = useState(false);
   const cartItems = useSelector((state) => state.home.cartItems);
+  
+  // Check if orderData is passed from Buy Now flow
+  const orderDataFromRoute = route.params?.orderData;
+  const isBuyNowFlow = !!orderDataFromRoute;
+  
+  // Use orderData from route if available, otherwise use cart items
+  const orderItems = isBuyNowFlow ? orderDataFromRoute.items : cartItems;
   
   // Form state
   const [formData, setFormData] = useState({
@@ -60,17 +91,24 @@ export default function CheckoutScreen({ navigation }) {
   };
 
   // Calculate totals
-  const subtotal = cartItems.reduce((sum, item) => {
+  const subtotal = orderItems.reduce((sum, item) => {
     const price = parseInt(item.price.replace(/[^0-9]/g, ''));
     return sum + (price * item.quantity);
   }, 0);
-  const delivery = cartItems.length > 0 ? 2000 : 0;
+  const delivery = orderItems.length > 0 ? 2000 : 0;
   const total = subtotal + delivery;
 
   // Submit order to Firebase
   const handlePlaceOrder = async () => {
-    if (cartItems.length === 0) {
-      Alert.alert('Error', 'Your cart is empty!');
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert('Error', 'Please sign in to place an order.');
+      navigation.navigate('Login');
+      return;
+    }
+
+    if (orderItems.length === 0) {
+      Alert.alert('Error', 'No items to order!');
       return;
     }
 
@@ -79,28 +117,68 @@ export default function CheckoutScreen({ navigation }) {
     setLoading(true);
     
     try {
-      const orderData = {
-        ...formData,
-        items: cartItems.map(item => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          color: item.color,
-          type: item.type,
-          isInstallment: item.isInstallment || false,
-          months: item.months || 0,
-          monthlyAmount: item.monthlyAmount || 0
-        })),
-        subtotal: subtotal,
-        deliveryFee: delivery,
-        total: total,
-        shipToDifferentAddress: checked,
-        createdAt: new Date().toISOString(),
-        status: 'pending'
-      };
+      let finalOrderData;
+
+      if (isBuyNowFlow) {
+        // Buy Now flow - merge form data with existing orderData
+        finalOrderData = {
+          ...orderDataFromRoute,
+          ...formData,
+          items: orderItems.map(item => ({
+            productId: item.productId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            color: item.color,
+            type: item.type,
+            image: item.image
+          })),
+          subtotal: subtotal,
+          deliveryFee: delivery,
+          total: total,
+          shipToDifferentAddress: checked,
+          paymentMethod: formData.paymentMethod,
+          userId: user.uid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          status: 'pending'
+        };
+      } else {
+        // Cart flow - create new order from cart items
+        finalOrderData = {
+          orderId: `ORD-${Date.now()}`,
+          userId: user.uid,
+          ...formData,
+          items: cartItems.map(item => ({
+            id: item.id,
+            productId: item.productId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            color: item.color,
+            type: item.type,
+            image: item.image,
+            isInstallment: item.isInstallment || false,
+            months: item.months || 0,
+            monthlyAmount: item.monthlyAmount || 0
+          })),
+          payment: {
+            method: 'full',
+            amount: total
+          },
+          subtotal: subtotal,
+          deliveryFee: delivery,
+          total: total,
+          shipToDifferentAddress: checked,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          status: 'pending'
+        };
+      }
       
-      const orderId = await addData('orders', orderData);
+      // Save order to Firestore
+      const docRef = await addDoc(collection(db, 'orders'), finalOrderData);
+      const orderId = docRef.id;
       
       // Reset form
       setFormData({
@@ -114,13 +192,17 @@ export default function CheckoutScreen({ navigation }) {
         paymentMethod: 'Cash on Delivery'
       });
       setChecked(false);
-      dispatch(clearCartItems());
+      
+      // Clear cart only if not Buy Now flow
+      if (!isBuyNowFlow) {
+        dispatch(clearCartItems());
+      }
       
       // Navigate to Order Success page
       navigation.navigate('OrderSuccess', {
         orderId: orderId,
         total: total,
-        items: cartItems
+        items: orderItems
       });
       
     } catch (error) {
@@ -194,17 +276,18 @@ export default function CheckoutScreen({ navigation }) {
           autoCapitalize="none"
         />
 
-        <View style={styles.checkboxRow}>
-          <CheckBox value={checked} onValueChange={setChecked} />
-          <Text>Ship to a different address?</Text>
-        </View>
+        <CustomCheckbox
+          value={checked}
+          onValueChange={setChecked}
+          label="Ship to a different address?"
+        />
       </View>
 
       {/* Order Summary */}
       <View style={styles.card}>
         <Text style={styles.title}>Your Order</Text>
         
-        {cartItems.map((item, index) => (
+        {orderItems.map((item, index) => (
           <View key={index} style={styles.row}>
             <Text>{item.name} x {item.quantity}</Text>
             <Text>PKR {(parseInt(item.price.replace(/[^0-9]/g, '')) * item.quantity).toLocaleString()}</Text>
@@ -280,7 +363,31 @@ const styles = StyleSheet.create({
   card: { backgroundColor: "#fff", margin: 10, padding: 15, borderRadius: 10, elevation: 3 },
   title: { fontSize: 16, fontWeight: "bold", marginBottom: 10 },
   input: { borderWidth: 1, borderColor: "#ccc", padding: 10, borderRadius: 8, marginBottom: 10 },
-  checkboxRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  checkboxContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: "#8e44ad",
+    borderRadius: 4,
+    marginRight: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  checkboxChecked: {
+    backgroundColor: "#8e44ad",
+    borderColor: "#8e44ad",
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: "#333",
+    flex: 1,
+  },
   row: { flexDirection: "row", justifyContent: "space-between", marginVertical: 5 },
   bold: { fontWeight: "bold" },
   radio: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 5 },
